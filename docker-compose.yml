@@ -1,0 +1,17 @@
+version: "3.9"
+
+services:
+  gcs-app:
+    container_name: gcs-file-sharing
+    build: .
+    ports:
+      - "3000:3000"
+
+    env_file:
+      - .env
+
+    volumes:
+      # Mount GCP key file
+      - ./key.json:/app/key.json:ro
+
+    restart: always
