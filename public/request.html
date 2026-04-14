@@ -1,126 +1,502 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>File Access Portal</title>
-</head>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-<body style="background:#0b0b0b; color:white; font-family:Arial; padding:40px;">
-
-<h2 style="text-align:center;"> File Access Portal</h2>
-
-<div style="display:flex; justify-content:space-between; margin-top:40px;">
-
-  <!-- LEFT -->
-  <div style="border:1px solid #555; padding:30px; width:45%;">
-    <h3>📥 Request File</h3>
-
-    <input id="req" placeholder="Describe requirement" style="width:100%; padding:10px;"><br><br>
-    <input id="name" placeholder="Your Name" style="width:100%; padding:10px;"><br><br>
-
-    <button onclick="request()">Send Request</button>
-
-    <p id="reqOut"></p>
-  </div>
-
-  <!-- RIGHT -->
-  <div style="border:1px solid #555; padding:30px; width:45%;">
-    <h3>🔐 Get Secure Download URL</h3>
-
-    <input id="uid" placeholder="Enter UserId (given by admin)" style="width:100%; padding:10px;"><br><br>
-
-    <button onclick="getLink()">Get Download Link</button>
-
-    <p id="out"></p>
-  </div>
-
-</div>
-
-<!--  LOADER -->
-<div id="loader" style="
-  display:none;
-  position:fixed;
-  top:0; left:0;
-  width:100%; height:100%;
-  background:rgba(0,0,0,0.7);
-  color:white;
-  font-size:22px;
-  justify-content:center;
-  align-items:center;
-">
-  ⏳ Processing...
-</div>
-
-<script>
-
-// ===== SHOW LOADER =====
-function showLoader(){
-  document.getElementById("loader").style.display = "flex";
-}
-
-// ===== HIDE LOADER =====
-function hideLoader(){
-  document.getElementById("loader").style.display = "none";
-}
-
-
-// ===== REQUEST FILE =====
-async function request(){
-  showLoader();
-
-  try {
-    const res = await fetch('/request-file',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        name: document.getElementById("name").value,
-        requirement: document.getElementById("req").value
-      })
-    });
-
-    await res.json();
-
-    document.getElementById("reqOut").innerHTML =
-      " Request sent successfully";
-  } catch (err) {
-    document.getElementById("reqOut").innerText =
-      " Failed to send request";
-  }
-
-  hideLoader();
-}
-
-
-// ===== GET SECURE LINK =====
-async function getLink(){
-  showLoader();
-
-  try {
-    const res = await fetch('/get-secure-link',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        userId: document.getElementById("uid").value
-      })
-    });
-
-    const data = await res.json();
-
-    if(data.url){
-      document.getElementById("out").innerHTML =
-        '<a href="'+data.url+'" target="_blank" style="color:#4CAF50;">🔗 Download File</a>';
-    } else {
-      document.getElementById("out").innerText = data.error;
+    :root {
+      --bg:        #080a0f;
+      --surface:   #0e1117;
+      --border:    #1e2535;
+      --accent:    #00e5ff;
+      --accent2:   #7b61ff;
+      --text:      #e8eaf6;
+      --muted:     #5c6680;
+      --success:   #00e676;
+      --error:     #ff5252;
+      --card-glow: rgba(0,229,255,0.06);
     }
 
-  } catch (err) {
-    document.getElementById("out").innerText =
-      "❌ Failed to fetch link";
-  }
+    html { font-size: 16px; }
 
-  hideLoader();
-}
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
 
-</script>
+    /* ── BACKGROUND GRID ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 48px 48px;
+      pointer-events: none;
+      z-index: 0;
+    }
 
+    /* ── AMBIENT BLOBS ── */
+    .blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.18;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .blob-1 { width: 500px; height: 500px; background: var(--accent2); top: -150px; left: -150px; }
+    .blob-2 { width: 400px; height: 400px; background: var(--accent);  bottom: -100px; right: -100px; }
+
+    /* ── WRAPPER ── */
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 60px 32px 80px;
+    }
+
+    /* ── HEADER ── */
+    header {
+      text-align: center;
+      margin-bottom: 72px;
+      animation: fadeDown 0.7s ease both;
+    }
+
+    .logo-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0,229,255,0.07);
+      border: 1px solid rgba(0,229,255,0.18);
+      border-radius: 100px;
+      padding: 6px 18px;
+      font-size: 11px;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 24px;
+    }
+
+    .logo-chip span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: block; animation: pulse 2s infinite; }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.1;
+      background: linear-gradient(135deg, #ffffff 30%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .sub {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 13px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── DIVIDER ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 48px;
+      animation: fadeUp 0.6s ease 0.1s both;
+    }
+    .divider-line { flex: 1; height: 1px; background: var(--border); }
+    .divider-label { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); }
+
+    /* ── GRID ── */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+    }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+
+    /* ── CARD ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 36px 32px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+      animation: fadeUp 0.6s ease both;
+    }
+    .card:nth-child(1) { animation-delay: 0.15s; }
+    .card:nth-child(2) { animation-delay: 0.28s; }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--card-glow);
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+
+    .card:hover { border-color: rgba(0,229,255,0.28); transform: translateY(-3px); box-shadow: 0 24px 60px rgba(0,0,0,0.4); }
+    .card:hover::before { opacity: 1; }
+
+    /* corner accent */
+    .card-corner {
+      position: absolute;
+      top: 0; right: 0;
+      width: 80px; height: 80px;
+      background: conic-gradient(from 180deg at 100% 0%, var(--accent2) 0%, transparent 40%);
+      opacity: 0.12;
+      border-radius: 0 20px 0 0;
+    }
+    .card:nth-child(2) .card-corner { background: conic-gradient(from 180deg at 100% 0%, var(--accent) 0%, transparent 40%); }
+
+    /* ── CARD HEADER ── */
+    .card-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .icon-box {
+      width: 46px; height: 46px;
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .icon-box.purple { background: rgba(123,97,255,0.15); border: 1px solid rgba(123,97,255,0.25); }
+    .icon-box.cyan   { background: rgba(0,229,255,0.10); border: 1px solid rgba(0,229,255,0.22); }
+
+    .card-title {
+      font-family: 'Syne', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .card-desc { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+
+    /* ── FORM ELEMENTS ── */
+    .field { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 16px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
+    }
+
+    input::placeholder { color: var(--muted); }
+
+    input:focus {
+      border-color: rgba(0,229,255,0.45);
+      background: rgba(0,229,255,0.04);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.08);
+    }
+
+    /* ── BUTTON ── */
+    .btn {
+      width: 100%;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+      transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+      margin-top: 24px;
+    }
+
+    .btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.12) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); opacity: 1; }
+
+    .btn-purple { background: linear-gradient(135deg, #7b61ff, #5a3fd4); box-shadow: 0 8px 28px rgba(123,97,255,0.35); }
+    .btn-cyan   { background: linear-gradient(135deg, #00c8e8, #0072ff); box-shadow: 0 8px 28px rgba(0,200,232,0.30); }
+
+    /* ── OUTPUT MESSAGE ── */
+    .output {
+      margin-top: 18px;
+      min-height: 24px;
+      font-size: 12px;
+      padding: 0 4px;
+      line-height: 1.7;
+      transition: all 0.3s;
+    }
+
+    .output.success { color: var(--success); }
+    .output.error   { color: var(--error); }
+
+    .output a {
+      color: var(--accent);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 16px;
+      background: rgba(0,229,255,0.07);
+      border: 1px solid rgba(0,229,255,0.2);
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-family: 'Syne', sans-serif;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      transition: background 0.2s, border-color 0.2s, transform 0.2s;
+      margin-top: 4px;
+    }
+    .output a:hover { background: rgba(0,229,255,0.14); border-color: rgba(0,229,255,0.4); transform: translateX(3px); }
+
+    /* ── BADGE SEPARATOR ── */
+    .step-badge {
+      display: inline-block;
+      background: var(--border);
+      border-radius: 100px;
+      padding: 2px 10px;
+      font-size: 10px;
+      letter-spacing: 1.5px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      margin-top: 64px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      animation: fadeUp 0.5s ease 0.4s both;
+    }
+
+    /* ── LOADER ── */
+    #loader {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(8,10,15,0.85);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+    }
+
+    .spinner {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+
+    .loader-text {
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── KEYFRAMES ── */
+    @keyframes fadeDown  { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeUp    { from { opacity:0; transform:translateY(18px);  } to { opacity:1; transform:translateY(0); } }
+    @keyframes pulse     { 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.4; transform:scale(0.7); } }
+    @keyframes spin      { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+
+  <div class="wrapper">
+
+    <!-- HEADER -->
+    <header>
+      <div class="logo-chip"><span></span> Secure Portal</div>
+      <h1>File Access Portal</h1>
+      <p class="sub">Request files or retrieve your secure download link below.</p>
+    </header>
+
+    <!-- DIVIDER -->
+    <div class="divider">
+      <div class="divider-line"></div>
+      <div class="divider-label">Operations</div>
+      <div class="divider-line"></div>
+    </div>
+
+    <!-- GRID -->
+    <div class="grid">
+
+      <!-- CARD 1: Request File -->
+      <div class="card">
+        <div class="card-corner"></div>
+        <div class="card-head">
+          <div class="icon-box purple">📥</div>
+          <div>
+            <div class="card-title">Request a File</div>
+            <div class="card-desc">Submit a request to the admin. You'll receive a User ID once approved.</div>
+          </div>
+        </div>
+
+        <div class="step-badge">Step 01 — Submit Request</div>
+
+        <div class="field">
+          <label>Requirement</label>
+          <input id="req" placeholder="Describe what you need…" />
+        </div>
+
+        <div class="field">
+          <label>Your Name</label>
+          <input id="name" placeholder="Full name" />
+        </div>
+
+        <button class="btn btn-purple" onclick="request()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send Request
+        </button>
+
+        <div class="output" id="reqOut"></div>
+      </div>
+
+      <!-- CARD 2: Get Secure Link -->
+      <div class="card">
+        <div class="card-corner"></div>
+        <div class="card-head">
+          <div class="icon-box cyan">🔐</div>
+          <div>
+            <div class="card-title">Get Secure Download URL</div>
+            <div class="card-desc">Enter the User ID provided by your admin to generate a download link.</div>
+          </div>
+        </div>
+
+        <div class="step-badge">Step 02 — Download File</div>
+
+        <div class="field">
+          <label>User ID</label>
+          <input id="uid" placeholder="Enter User ID given by admin" />
+        </div>
+
+        <button class="btn btn-cyan" onclick="getLink()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Get Download Link
+        </button>
+
+        <div class="output" id="out"></div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <footer>
+      &copy; 2025 File Access Portal &nbsp;·&nbsp; All transmissions are encrypted
+    </footer>
+  </div>
+
+  <!-- LOADER -->
+  <div id="loader">
+    <div class="spinner"></div>
+    <div class="loader-text">Processing…</div>
+  </div>
+
+  <script>
+    function showLoader(){ document.getElementById("loader").style.display = "flex"; }
+    function hideLoader(){ document.getElementById("loader").style.display = "none"; }
+
+    async function request(){
+      showLoader();
+      const out = document.getElementById("reqOut");
+      try {
+        const res = await fetch('/request-file',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({
+            name: document.getElementById("name").value,
+            requirement: document.getElementById("req").value
+          })
+        });
+        await res.json();
+        out.className = "output success";
+        out.innerHTML = "✓ &nbsp;Request sent successfully";
+      } catch (err) {
+        out.className = "output error";
+        out.innerText = "✕  Failed to send request";
+      }
+      hideLoader();
+    }
+
+    async function getLink(){
+      showLoader();
+      const out = document.getElementById("out");
+      try {
+        const res = await fetch('/get-secure-link',{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ userId: document.getElementById("uid").value })
+        });
+        const data = await res.json();
+        if(data.url){
+          out.className = "output";
+          out.innerHTML = '<a href="'+data.url+'" target="_blank">↗ &nbsp;Download File</a>';
+        } else {
+          out.className = "output error";
+          out.innerText = data.error;
+        }
+      } catch (err) {
+        out.className = "output error";
+        out.innerText = "✕  Failed to fetch link";
+      }
+      hideLoader();
+    }
+  </script>
 </body>
 </html>
+```
