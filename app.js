@@ -9,13 +9,11 @@ const path = require('path');
 
 const app = express();
 
-//  IMPORTANT (for real IP in production)
 app.set('trust proxy', true);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-//  Serve UI
 app.use('/ui', express.static(path.join(__dirname, 'public')));
 
 // ===== CONFIG =====
@@ -53,25 +51,20 @@ const transporter = nodemailer.createTransport({
 });
 
 // ===== DATA =====
-// fileName → { gcsPath, userId }
 const fileRegistry = new Map();
-
-// ===== RATE LIMIT STORE =====
-const requestTracker = new Map(); // ip → timestamp
+const requestTracker = new Map();
+const adminSessions = new Map();
 
 // ===== LOGGER =====
 const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
 
-// ===== RATE LIMIT FUNCTION =====
+// ===== RATE LIMIT =====
 function isRateLimited(ip) {
   const now = Date.now();
   const last = requestTracker.get(ip);
+  const LIMIT = 10 * 60 * 1000;
 
-  const LIMIT = 10 * 60 * 1000; // 10 minutes
-
-  if (last && (now - last < LIMIT)) {
-    return true;
-  }
+  if (last && (now - last < LIMIT)) return true;
 
   requestTracker.set(ip, now);
   return false;
@@ -121,35 +114,82 @@ async function generateSignedUrl(gcsPath) {
   return url;
 }
 
-//
 // ===== HOME =====
-//
 app.get('/', (req, res) => {
   res.redirect('/ui/request.html');
 });
 
-//
+// ===== ADMIN GENERATE ACCESS =====
+app.post('/admin/generate-access', async (req, res) => {
+  try {
+    const { approver } = req.body;
+
+    if (!APPROVERS[approver]) {
+      return res.status(400).json({ error: "Invalid approver" });
+    }
+
+    const accessId = crypto.randomBytes(4).toString('hex');
+
+    adminSessions.set(accessId, {
+      approver,
+      expires: Date.now() + 10 * 60 * 1000
+    });
+
+    await sendEmail({
+      to: APPROVERS[approver],
+      subject: "Admin Access Code",
+      text: `Your admin access code is: ${accessId}\nValid for 10 minutes`
+    });
+
+    res.json({ message: "Access ID sent to approver email" });
+
+  } catch (err) {
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ===== ADMIN VERIFY =====
+app.post('/admin/verify', (req, res) => {
+  const { accessId } = req.body;
+
+  const session = adminSessions.get(accessId);
+
+  if (!session) {
+    return res.status(401).json({ error: "Invalid access ID" });
+  }
+
+  if (Date.now() > session.expires) {
+    adminSessions.delete(accessId);
+    return res.status(401).json({ error: "Access expired" });
+  }
+
+  const token = jwt.sign(
+    { role: "admin", approver: session.approver },
+    JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+
+  res.json({ token });
+});
+
+// ===== GET APPROVERS =====
+app.get('/admin/approvers', (req, res) => {
+  res.json({ approvers: Object.keys(APPROVERS) });
+});
+
 // ===== GET SECURE LINK =====
-//
 app.post('/get-secure-link', (req, res) => {
   try {
-    const { userId } = req.body;
+    const entries = Array.from(fileRegistry.entries());
 
-    let found = null;
-
-    for (const [fileName, entry] of fileRegistry.entries()) {
-      if (entry.userId === userId) {
-        found = { fileName, ...entry };
-        break;
-      }
+    if (!entries.length) {
+      return res.status(404).json({ error: 'No file mapped yet' });
     }
 
-    if (!found) {
-      return res.status(404).json({ error: 'No file mapped for this userId' });
-    }
+    const [fileName, entry] = entries[entries.length - 1];
 
     const token = jwt.sign(
-      { gcsPath: found.gcsPath, userId },
+      { gcsPath: entry.gcsPath, userId: entry.userId },
       JWT_SECRET,
       { expiresIn: '10m' }
     );
@@ -158,62 +198,90 @@ app.post('/get-secure-link', (req, res) => {
 
     return res.json({ url });
 
-  } catch (err) {
+  } catch {
     return res.status(500).json({ error: 'Internal error' });
   }
 });
 
-//
-// ===== REQUEST FILE (RATE LIMITED) =====
-//
+// ===== REQUEST FILE =====
 app.post('/request-file', async (req, res) => {
   const ip = req.ip;
 
   if (isRateLimited(ip)) {
-    log(`  Rate limit hit → ${ip}`);
     return res.status(429).json({
-      error: "  Only 1 request allowed every 10 minutes"
+      error: "Only 1 request allowed every 10 minutes"
     });
   }
 
   const { name, requirement } = req.body;
-
   const userId = crypto.randomBytes(4).toString('hex');
 
-  log(`  Request → ${name} → IP: ${ip} → userId=${userId}`);
-
   await sendNotificationEmails(
-    '  New Requirement',
+    'New Requirement',
     `User: ${name}\nRequirement: ${requirement}\nUserId: ${userId}\nIP: ${ip}`
   );
 
-  res.json({ message: "Request sent successfully" });
+  res.json({ message: "Request sent", userId });
 });
 
-//
-// ===== REGISTER FILE =====
-//
+// ===== REGISTER FILE (UPDATED LOGIC) =====
 app.post('/register-file', async (req, res) => {
-  const { fileName, gcsPath, userId } = req.body;
+  try {
 
-  const token = jwt.sign(
-    { fileName, gcsPath, userId },
-    JWT_SECRET,
-    { expiresIn: '10m' }
-  );
+    const auth = req.headers.authorization;
 
-  await sendApprovalEmails(
-    token,
-    ' Mapping Approval',
-    `File: ${fileName}\nPath: ${gcsPath}\nUserId: ${userId}`
-  );
+    // 🔐 ADMIN UI → DIRECT APPROVAL
+    if (auth) {
+      const token = auth.split(" ")[1];
 
-  res.json({ message: 'Approval sent' });
+      let decoded;
+      try {
+        decoded = jwt.verify(token, JWT_SECRET);
+      } catch {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+
+      if (decoded.role !== "admin") {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
+      const { fileName, gcsPath, userId } = req.body;
+
+      fileRegistry.set(fileName, {
+        gcsPath,
+        userId
+      });
+
+      log(` Direct mapping → ${fileName}`);
+
+      return res.json({
+        message: " File mapped & approved instantly"
+      });
+    }
+
+    // 📩 POSTMAN → APPROVAL FLOW
+    const { fileName, gcsPath, userId } = req.body;
+
+    const approvalToken = jwt.sign(
+      { fileName, gcsPath, userId },
+      JWT_SECRET,
+      { expiresIn: '10m' }
+    );
+
+    await sendApprovalEmails(
+      approvalToken,
+      'Mapping Approval',
+      `File: ${fileName}\nPath: ${gcsPath}\nUserId: ${userId}`
+    );
+
+    return res.json({ message: ' Approval email sent' });
+
+  } catch {
+    res.status(500).json({ error: "Internal error" });
+  }
 });
 
-//
 // ===== APPROVE =====
-//
 app.get('/approve', (req, res) => {
   const d = jwt.verify(req.query.token, JWT_SECRET);
 
@@ -230,9 +298,7 @@ app.get('/approve', (req, res) => {
   `);
 });
 
-//
 // ===== APPROVE REGISTER =====
-//
 app.post('/approve-register', (req, res) => {
   const d = jwt.verify(req.body.token, JWT_SECRET);
 
@@ -241,55 +307,35 @@ app.post('/approve-register', (req, res) => {
     userId: d.userId
   });
 
-  res.send(`
-    <h2> Approved</h2>
-    <p>UserId: ${d.userId}</p>
-
-    <button onclick="gen()">Generate Link</button>
-
-    <div id="out"></div>
-
-    <script>
-    async function gen(){
-      const res = await fetch('/get-secure-link', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ userId: "${d.userId}" })
-      });
-
-      const data = await res.json();
-
-      document.getElementById("out").innerHTML =
-        '<input value="'+data.url+'" style="width:80%" readonly>' +
-        '<br><br><button onclick="copy()">Copy</button>';
-    }
-
-    function copy(){
-      const el = document.querySelector("#out input");
-      el.select();
-      document.execCommand("copy");
-      alert("Copied!");
-    }
-    </script>
-  `);
+  res.send(`<h2> Approved</h2>`);
 });
 
-//
 // ===== VALIDATE DOWNLOAD =====
-//
 app.post('/validate-download', async (req, res) => {
-  const { token, userId } = req.body;
-  const d = jwt.verify(token, JWT_SECRET);
+  try {
+    const { token, userId } = req.body;
 
-  if (d.userId !== userId) return res.send("  Invalid UserId");
+    const d = jwt.verify(token, JWT_SECRET);
 
-  const url = await generateSignedUrl(d.gcsPath);
-  return res.redirect(url);
+    if (d.userId !== userId) return res.send("Invalid UserId");
+
+    const url = await generateSignedUrl(d.gcsPath);
+    return res.redirect(url);
+
+  } catch {
+    return res.send("Invalid or expired token");
+  }
 });
 
-//
+// ===== CLEANUP =====
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of adminSessions.entries()) {
+    if (v.expires < now) adminSessions.delete(k);
+  }
+}, 60000);
+
 // ===== START =====
-//
 app.listen(PORT, () => {
   log(`Server running on ${PORT}`);
 });

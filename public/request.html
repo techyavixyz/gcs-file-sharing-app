@@ -30,7 +30,35 @@
       min-height: 100vh;
       overflow-x: hidden;
     }
+    /* ── ADMIN BUTTON TOP RIGHT ── */
+    /* .admin-btn {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 999;
+        width: auto;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 11px;
+        letter-spacing: 1px;
+    }     */
+    .admin-btn {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 999;
+        width: auto;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-size: 11px;
+        letter-spacing: 1px;
+        opacity: 0.8;
+}
 
+.admin-btn:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+}
     /* ── BACKGROUND GRID ── */
     body::before {
       content: '';
@@ -353,6 +381,9 @@
   </style>
 </head>
 <body>
+    <button class="btn btn-purple admin-btn" onclick="goAdmin()">
+        🔑 Admin
+      </button>
 
   <div class="blob blob-1"></div>
   <div class="blob blob-2"></div>
@@ -419,11 +450,14 @@
         </div>
 
         <div class="step-badge">Step 02 — Download File</div>
+        
 
-        <div class="field">
+        
+
+        <!-- <div class="field">
           <label>User ID</label>
           <input id="uid" placeholder="Enter User ID given by admin" />
-        </div>
+        </div> -->
 
         <button class="btn btn-cyan" onclick="getLink()">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -463,40 +497,71 @@
             requirement: document.getElementById("req").value
           })
         });
-        await res.json();
+        // await res.json();
+        // out.className = "output success";
+        // out.innerHTML = "✓ &nbsp;Request sent successfully";
+        const data = await res.json();
+
         out.className = "output success";
-        out.innerHTML = "✓ &nbsp;Request sent successfully";
+        out.innerHTML = "✓ &nbsp;Request sent successfully<br><br><b>UserId:</b> " + data.userId;        
       } catch (err) {
         out.className = "output error";
         out.innerText = "✕  Failed to send request";
       }
       hideLoader();
     }
-
     async function getLink(){
-      showLoader();
-      const out = document.getElementById("out");
-      try {
-        const res = await fetch('/get-secure-link',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ userId: document.getElementById("uid").value })
-        });
-        const data = await res.json();
-        if(data.url){
-          out.className = "output";
-          out.innerHTML = '<a href="'+data.url+'" target="_blank">↗ &nbsp;Download File</a>';
-        } else {
-          out.className = "output error";
-          out.innerText = data.error;
+        showLoader();
+        const out = document.getElementById("out");
+
+        try {
+            const res = await fetch('/get-secure-link', {
+            method:'POST'
+            });
+
+            const data = await res.json();
+
+            if(data.url){
+            // 🔥 IMPORTANT: redirect WITH token
+            window.location.href = data.url;
+            } else {
+            out.className = "output error";
+            out.innerText = data.error;
+            }
+
+        } catch (err) {
+            out.className = "output error";
+            out.innerText = "✕ Failed to fetch link";
         }
-      } catch (err) {
-        out.className = "output error";
-        out.innerText = "✕  Failed to fetch link";
-      }
-      hideLoader();
-    }
+
+        hideLoader();
+    } 
+    function goAdmin(){
+        window.location.href = "/ui/admin.html";
+        }
+    // async function getLink(){
+    //   showLoader();
+    //   const out = document.getElementById("out");
+    //   try {
+    //     const res = await fetch('/get-secure-link',{
+    //       method:'POST',
+    //       headers:{'Content-Type':'application/json'},
+    //       body: JSON.stringify({ userId: document.getElementById("uid").value })
+    //     });
+    //     const data = await res.json();
+    //     if(data.url){
+    //       out.className = "output";
+    //       out.innerHTML = '<a href="'+data.url+'" target="_blank">↗ &nbsp;Download File</a>';
+    //     } else {
+    //       out.className = "output error";
+    //       out.innerText = data.error;
+    //     }
+    //   } catch (err) {
+    //     out.className = "output error";
+    //     out.innerText = "✕  Failed to fetch link";
+    //   }
+    //   hideLoader();
+    // }
   </script>
 </body>
 </html>
-```

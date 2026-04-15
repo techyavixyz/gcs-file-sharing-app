@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin Portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body {
+  background:#0b0f17;
+  color:#e8eaf6;
+  font-family: monospace;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+
+.card {
+  width:420px;
+  background:#111722;
+  padding:30px;
+  border-radius:12px;
+  border:1px solid #1e2535;
+}
+
+h2 { margin-bottom:20px; }
+
+input, select {
+  width:100%;
+  padding:10px;
+  margin-bottom:12px;
+  background:#0b0f17;
+  border:1px solid #1e2535;
+  color:#fff;
+}
+
+button {
+  width:100%;
+  padding:12px;
+  background:#00e5ff;
+  border:none;
+  cursor:pointer;
+  margin-top:10px;
+}
+
+button:disabled {
+  opacity:0.5;
+  cursor:not-allowed;
+}
+
+/* ===== LOADER ===== */
+#loader {
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(8,10,15,0.85);
+  backdrop-filter: blur(6px);
+  z-index:9999;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+}
+
+.spinner {
+  width:50px;
+  height:50px;
+  border:3px solid #1e2535;
+  border-top-color:#00e5ff;
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+
+.loader-text {
+  margin-top:12px;
+  font-size:12px;
+  color:#5c6680;
+  letter-spacing:2px;
+}
+
+@keyframes spin {
+  to { transform:rotate(360deg); }
+}
+</style>
+
+</head>
+<body>
+
+<div class="card">
+
+<h2>🔐 Admin Access</h2>
+
+<!-- ===== LOGIN SECTION ===== -->
+<div id="loginSection">
+
+  <label>Select Approver</label>
+  <select id="approver"></select>
+
+  <button id="genBtn" onclick="generateAccess()">Generate & Send Admin ID</button>
+
+  <hr style="margin:20px 0;">
+
+  <label>Enter Admin ID</label>
+  <input id="adminId" placeholder="Enter ID received via email">
+
+  <button id="verifyBtn" onclick="verify()">Verify</button>
+
+</div>
+
+<!-- ===== REGISTER SECTION ===== -->
+<div id="registerSection" style="display:none;">
+
+  <h3>📦 Register File</h3>
+
+  <label>File Name</label>
+  <input id="fileName" placeholder="example.pdf">
+
+  <label>GCS Path</label>
+  <input id="gcsPath" placeholder="gs://bucket/file.pdf">
+
+  <label>User ID</label>
+  <input id="userId" placeholder="Enter userId">
+
+  <button id="submitBtn" onclick="registerFile()">Submit</button>
+
+  <div id="result" style="margin-top:10px;"></div>
+
+</div>
+
+</div>
+
+<!-- ===== LOADER ===== -->
+<div id="loader">
+  <div class="spinner"></div>
+  <div class="loader-text">Processing…</div>
+</div>
+
+<script>
+
+let adminToken = "";
+
+// ===== LOADER =====
+function showLoader(){
+  document.getElementById("loader").style.display = "flex";
+}
+function hideLoader(){
+  document.getElementById("loader").style.display = "none";
+}
+
+// ===== LOAD APPROVERS =====
+async function loadApprovers() {
+  const select = document.getElementById("approver");
+
+  try {
+    const res = await fetch('/admin/approvers');
+    const data = await res.json();
+
+    select.innerHTML = '<option value="">Select Approver</option>';
+
+    data.approvers.forEach(a => {
+      const opt = document.createElement("option");
+      opt.value = a;
+      opt.innerText = a;
+      select.appendChild(opt);
+    });
+
+  } catch (err) {
+    alert("Failed to load approvers");
+  }
+}
+
+window.onload = loadApprovers;
+
+// ===== GENERATE ADMIN ACCESS =====
+async function generateAccess(){
+
+  const btn = document.getElementById("genBtn");
+  const approver = document.getElementById("approver").value;
+
+  if(!approver){
+    alert("Select approver");
+    return;
+  }
+
+  btn.disabled = true;
+  showLoader();
+
+  try {
+    const res = await fetch('/admin/generate-access',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ approver })
+    });
+
+    const data = await res.json();
+    alert(data.message);
+
+  } catch(err){
+    alert("Failed to send ID");
+  }
+
+  btn.disabled = false;
+  hideLoader();
+}
+
+// ===== VERIFY ADMIN =====
+async function verify(){
+
+  const btn = document.getElementById("verifyBtn");
+  const accessId = document.getElementById("adminId").value;
+
+  if(!accessId){
+    alert("Enter Admin ID");
+    return;
+  }
+
+  btn.disabled = true;
+  showLoader();
+
+  try {
+    const res = await fetch('/admin/verify',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ accessId })
+    });
+
+    const data = await res.json();
+
+    if(data.token){
+      adminToken = data.token;
+
+      document.getElementById("loginSection").style.display = "none";
+      document.getElementById("registerSection").style.display = "block";
+
+    } else {
+      alert(data.error || "Invalid ID");
+    }
+
+  } catch(err){
+    alert("Verification failed");
+  }
+
+  btn.disabled = false;
+  hideLoader();
+}
+
+// ===== REGISTER FILE =====
+async function registerFile(){
+
+  const btn = document.getElementById("submitBtn");
+
+  const fileName = document.getElementById("fileName").value;
+  const gcsPath = document.getElementById("gcsPath").value;
+  const userId = document.getElementById("userId").value;
+
+  if(!fileName || !gcsPath || !userId){
+    alert("Fill all fields");
+    return;
+  }
+
+  btn.disabled = true;
+  showLoader();
+
+  try {
+    const res = await fetch('/register-file',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer ' + adminToken
+      },
+      body: JSON.stringify({ fileName, gcsPath, userId })
+    });
+
+    const data = await res.json();
+
+    document.getElementById("result").innerText = data.message || data.error;
+
+  } catch(err){
+    alert("Failed to register");
+  }
+
+  btn.disabled = false;
+  hideLoader();
+}
+
+</script>
+
+</body>
+</html>
