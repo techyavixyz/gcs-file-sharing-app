@@ -54,6 +54,7 @@ const transporter = nodemailer.createTransport({
 const fileRegistry = new Map();
 const requestTracker = new Map();
 const adminSessions = new Map();
+const requestStore = []; // 🔥 NEW (store requests)
 
 // ===== LOGGER =====
 const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -177,6 +178,14 @@ app.get('/admin/approvers', (req, res) => {
   res.json({ approvers: Object.keys(APPROVERS) });
 });
 
+// ===== 🔥 NEW: GET REQUEST LIST =====
+app.get('/admin/requests', (req, res) => {
+  res.json({
+    count: requestStore.length,
+    requests: requestStore
+  });
+});
+
 // ===== GET SECURE LINK =====
 app.post('/get-secure-link', (req, res) => {
   try {
@@ -216,6 +225,17 @@ app.post('/request-file', async (req, res) => {
   const { name, requirement } = req.body;
   const userId = crypto.randomBytes(4).toString('hex');
 
+  // 🔥 STORE REQUEST
+  requestStore.push({
+    userId,
+    name,
+    requirement,
+    ip,
+    createdAt: new Date().toISOString()
+  });
+
+  log(` New request stored → ${userId}`);
+
   await sendNotificationEmails(
     'New Requirement',
     `User: ${name}\nRequirement: ${requirement}\nUserId: ${userId}\nIP: ${ip}`
@@ -224,13 +244,12 @@ app.post('/request-file', async (req, res) => {
   res.json({ message: "Request sent", userId });
 });
 
-// ===== REGISTER FILE (UPDATED LOGIC) =====
+// ===== REGISTER FILE =====
 app.post('/register-file', async (req, res) => {
   try {
 
     const auth = req.headers.authorization;
 
-    // 🔐 ADMIN UI → DIRECT APPROVAL
     if (auth) {
       const token = auth.split(" ")[1];
 
@@ -247,10 +266,7 @@ app.post('/register-file', async (req, res) => {
 
       const { fileName, gcsPath, userId } = req.body;
 
-      fileRegistry.set(fileName, {
-        gcsPath,
-        userId
-      });
+      fileRegistry.set(fileName, { gcsPath, userId });
 
       log(` Direct mapping → ${fileName}`);
 
@@ -259,7 +275,6 @@ app.post('/register-file', async (req, res) => {
       });
     }
 
-    // 📩 POSTMAN → APPROVAL FLOW
     const { fileName, gcsPath, userId } = req.body;
 
     const approvalToken = jwt.sign(
